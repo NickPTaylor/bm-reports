@@ -1,0 +1,143 @@
+---
+title: "BM Report Analysis"
+date: "`r format(Sys.Date())`"
+output:
+  github_document: default
+  html_notebook: 
+      code_folding="hide"
+bibliography: my_bib.bib
+---
+
+```{r setup, include = FALSE}
+library(urltools)
+library(getPass)
+library(tidyverse)
+library(xml2)
+library(lubridate)
+```
+
+# Introduction
+
+The purpose of this report is to study and analyse the data available from the BM (Balancing Mechanism) reports.  These reports contain current and historical data relating to the supply of electricity on the UK national grid.  The reports include data relating to transmission, generation, demand and balancing.  We access the data using an API (Application Programming Interface) which is described in detail [[@ghanty_201610]][ghanty_201610] and is available on the Elexon website .  
+
+Herein, we will show how the R programming language can be used to analyse and acquire knowledge from the data; we will perform the analysis in a reproducible fashion.  Specifically, we will demonstrate the `tidyverse` style of R programming, as described by [[@wickham_201701]][wickham_201701].  The `tidyverse` is a set of packages (groups of functions) that are highly consistent in style and interface.  When tools all work in the same way, it is much easier to use them and understand them.  The `tidyverse` tools include functions for reading, tidying, iterating, plotting and processing data.
+
+In addition to demonstrating the `tidyverse`, we will demonstrate analysis techniques which are appropriate to developing predictive and forecasting models for time-series, which are presented in [[@hyndman_2014mm]][hyndman_2014mm].
+
+[wickham_201701]: http://r4ds.had.co.nz/
+[hyndman_2014mm]: https://www.otexts.org/fpp
+[ghanty_201610]: https://www.elexon.co.uk/wp-content/uploads/2016/10/Application-Programming-Interfaces-API-and-Data-Push-user-guide.pdf
+
+# Basic Data Aqusition
+
+## Reading the Data
+
+As discussed above, we use an API to access the BM Report data.  This requires a key which is available upon registration with Elexon.  The code below requires each user to enter their unique API key.  If you run this code, you will be prompted to enter your personal key.  The method for connecting to the API is described in @ghanty_201610 pp. 12-13.
+
+In the example below, we extract the 'Rolling System Frequency' between the 16th and 18th January, 2017.  Accessing this particular data is described in @ghanty_201610 p. 81.  We use the `urltools` package to encode the API URL (Universal Resource Locator) given the query.  In this case, we request the data in XML (Extensible Markup Language) format.
+
+```{r xmlfile, cache = TRUE}
+# get API key from user  -------------------------------------------------------
+api_key <- getPass("Enter API key")
+stopifnot(!is.null(api_key))
+
+# construct query API URL ------------------------------------------------------
+service_url <- paste(
+    "https://api.bmreports.com:443",
+    "BMRS/FREQ",
+    "v1",
+    sep = "/")
+
+query_url <- service_url %>% 
+    param_set("APIKey", api_key) %>% 
+    param_set("FromDateTime", url_encode("2017-01-16 00:00:00")) %>% 
+    param_set("ToDateTime", url_encode("2017-01-18 00:00:00")) %>% 
+    param_set("ServiceType", "xml")  
+
+# connect to API and request data ---------------------------------------------
+print(paste0("[", Sys.time(), "] Connected to BM Reports API ..."))
+xmlfile <- read_xml(query_url)
+
+# tidy up sensitive information -----------------------------------------------
+rm(api_key,  query_url)
+```
+
+To prevent unnecessary connections to the API, the results of the code above are cached.  Care should be taken in general to be 'polite', only connecting to the API when really necessary.  API providers, including Elexon, set out rules defining what acceptable usage means.
+
+## Extracting Data
+
+The `xml2` package is used to parse and process the data.  Note that HTTP (Hyper Text Transfer Protocol) status code for 'OK' is 200 so we first check that data was retrieved from the API without error.  Next, we extract the relevant data.  The XML nodes are selected using the XPath language, which is described in  @xpath_2017mm (see [here][xpath_2017mm]).
+
+[xpath_2017mm]: http://www.w3schools.com/xml/xpath_intro.asp
+
+```{r df_raw, cache = TRUE, dependson = xmlfile}
+# check succsess - http code must be 200 --------------------------------------
+status <- xmlfile %>% 
+    xml_find_first("responseMetadata/httpCode") %>% 
+    xml_text()
+stopifnot(status == 200)
+
+# extract raw data from XML document and save ---------------------------------
+data_xpaths <- list(
+    date = "//reportSnapshotTime", 
+    time = "//spotTime", 
+    freq = "//frequency"
+)
+
+df_raw <- data_xpaths %>% 
+    map_df(~ xmlfile %>%  xml_find_all(.x) %>%  xml_text())
+
+saveRDS(df_raw, "df_raw.rds")
+```
+
+The raw data from the XML file requires some tidying.  Here, we are using the `dplyr` package (a part of the `tidyverse`) to manipulate the raw data.   The `lubridate` package is used to work with time-based data.  In our experience, great care must be taken with time stamped data.  Be aware of local time zones, local time formatting, daylight saving hours, leap years, leap minutes, etc.  The `lubridate` package takes care of this detail.  We simply tell `lubridate` to work in 'London' time.
+
+``` {r df_tidy}
+df_tidy <- df_raw %>% 
+    mutate(
+        date_time = ymd_hms(paste(date, time), tz = "Europe/London"),
+        freq = as.numeric(freq)) %>% 
+    select(date_time, freq, -c(date, time))   
+    
+knitr::kable(
+  head(df_tidy), 
+  caption = "Data retrieved from BM reports API"
+)
+```
+
+## Plotting Data
+
+Finally, we use the `ggplot` package (also part of the `tidyverse`) to produce a variety of intuitive plots.
+
+### Time series
+
+A time series line plot gives some insight into:
+
+* Overall patterns: trend, seasonality, cyclic components.
+
+* Levels and variance.
+
+* Whether the data is stationary.
+
+* Anomalies, outliers, errors, etc.
+
+```{r plot_df_tidy}
+# time series plot ------------------------------------------------------------
+df_tidy %>% ggplot(aes(date_time, freq)) +
+    geom_line(colour = 'red', size = 0.2) +
+    labs(title = "The UK National Grid frequency must be balanced at 50Hz", 
+         subtitle = "Data from BM Reports",
+         x = "Local Time",
+         y = "Frequency (Hz)") +
+    geom_hline(yintercept = 50, linetype = 'dashed') +
+    scale_x_datetime(
+        breaks = 
+            seq(min(df_tidy$date_time), max(df_tidy$date_time), "6 hours"),
+        date_labels = "%d-%b\n%H:%M"
+    ) + 
+    theme(axis.text.x = element_text(angle = 60, vjust = 0.5))
+
+
+```
+
+# References
