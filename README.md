@@ -1,6 +1,6 @@
 BM Report Analysis
 ================
-2017-02-09
+2017-02-13
 
 Introduction
 ============
@@ -19,31 +19,36 @@ Reading the Data
 
 As discussed above, we use an API to access the BM Report data. This requires a key which is available upon registration with Elexon. The code below requires each user to enter their unique API key. If you run this code, you will be prompted to enter your personal key. The method for connecting to the API is described in Ghanty (2016) pp. 12-13.
 
-In the example below, we extract the 'Rolling System Frequency' between the 16th and 18th January, 2017. Accessing this particular data is described in Ghanty (2016) p. 81. We use the `urltools` package to encode the API URL (Universal Resource Locator) given the query. In this case, we request the data in XML (Extensible Markup Language) format.
+In this example, we will acquire the 'Rolling System Frequency' on the 17th of January, 2017. Accessing this particular data is described in Ghanty (2016) p. 81. We use the `urltools` package to encode the API URL (Universal Resource Locator) given the query. In this case, we request the data in XML (Extensible Markup Language) format.
 
 ``` r
 # get API key from user  -------------------------------------------------------
 api_key <- getPass("Enter API key")
 stopifnot(!is.null(api_key))
 
+# API query data 
+report_type <- "BMRS/FREQ"             # name of report to request from API
+start_datetime <- "2017-01-17 00:00:00"
+end_datetime <- "2017-01-18 00:00:00"
+
 # construct query API URL ------------------------------------------------------
 service_url <- paste(
     "https://api.bmreports.com:443",
-    "BMRS/FREQ",
+    report_type,
     "v1",
     sep = "/")
 
 query_url <- service_url %>% 
     param_set("APIKey", api_key) %>% 
-    param_set("FromDateTime", url_encode("2017-01-16 00:00:00")) %>% 
-    param_set("ToDateTime", url_encode("2017-01-18 00:00:00")) %>% 
+    param_set("FromDateTime", url_encode(start_datetime)) %>% 
+    param_set("ToDateTime", url_encode(end_datetime)) %>% 
     param_set("ServiceType", "xml")  
 
 # connect to API and request data ---------------------------------------------
 print(paste0("[", Sys.time(), "] Connected to BM Reports API ..."))
 ```
 
-    ## [1] "[2017-02-09 16:01:09] Connected to BM Reports API ..."
+    ## [1] "[2017-02-10 10:40:02] Connected to BM Reports API ..."
 
 ``` r
 xmlfile <- read_xml(query_url)
@@ -96,12 +101,12 @@ knitr::kable(
 
 | date\_time          |    freq|
 |:--------------------|-------:|
-| 2017-01-16 00:00:00 |  50.033|
-| 2017-01-16 00:00:15 |  49.984|
-| 2017-01-16 00:00:30 |  49.969|
-| 2017-01-16 00:00:45 |  49.908|
-| 2017-01-16 00:01:00 |  49.881|
-| 2017-01-16 00:01:15 |  49.868|
+| 2017-01-17 00:00:00 |  50.000|
+| 2017-01-17 00:00:15 |  49.962|
+| 2017-01-17 00:00:30 |  49.966|
+| 2017-01-17 00:00:45 |  49.949|
+| 2017-01-17 00:01:00 |  49.964|
+| 2017-01-17 00:01:15 |  49.954|
 
 Plotting Data
 -------------
@@ -121,23 +126,122 @@ A time series line plot gives some insight into:
 -   Anomalies, outliers, errors, etc.
 
 ``` r
+my_breaks <- seq(from = ymd_hms(start_datetime), to = ymd_hms(end_datetime),  
+                 by = "6 hours")
+
 # time series plot ------------------------------------------------------------
-df_tidy %>% ggplot(aes(date_time, freq)) +
+plt_line <- ggplot(df_tidy, aes(date_time, freq, group = 1)) +
     geom_line(colour = 'red', size = 0.2) +
-    labs(title = "The UK National Grid frequency must be balanced at 50Hz", 
-         subtitle = "Data from BM Reports",
+    labs(title = "UK National Grid frequency over 1 day", 
+         subtitle = "The frequency should be balanced at 50Hz",
+         caption = "Data from BM Reports",
          x = "Local Time",
          y = "Frequency (Hz)") +
-    geom_hline(yintercept = 50, linetype = 'dashed') +
+    geom_smooth(method = "lm", linetype = "dashed", colour = "black") + 
+    geom_hline(yintercept = c(1.01 * 50, 0.99 * 50), 
+               linetype = "dashed", colour = "black", size = 0.5) +
     scale_x_datetime(
-        breaks = 
-            seq(min(df_tidy$date_time), max(df_tidy$date_time), "6 hours"),
+        breaks = my_breaks,
         date_labels = "%d-%b\n%H:%M"
     ) + 
     theme(axis.text.x = element_text(angle = 60, vjust = 0.5))
+
+plt_line
 ```
 
 ![](README_files/figure-markdown_github/plot_df_tidy-1.png)
+
+The National Grid have an [obligation](http://www2.nationalgrid.com/uk/services/balancing-services/frequency-response/) to control the frequency within ± 1% of the nominal value of 50Hz. We have fitted a line using a linear model with gradient and intercept which is displayed with a bold black dashed line. We have also fitted 50 ± 0.5Hz reference lines. We observe a small upwards trend but the frequency is well within obligations.
+
+### Stationary Data
+
+This data has a resolution of 15 seconds so it is interesting to 'zoom in' and to observe a smaller time window.
+
+``` r
+my_xlims <- ymd_hms(c("2017-01-17 18:00:00", "2017-01-17 19:00:00"))
+my_breaks <- seq(from = my_xlims[1], my_xlims[2], by = "5 mins")
+
+plt_line + 
+    coord_cartesian(xlim = my_xlims, ylim = 50 + c(0.1, -0.1)) + 
+    geom_point(color = 'red', size = 0.7) +
+    scale_x_datetime(
+        breaks = my_breaks,
+        date_labels = "%H:%M"
+    ) +
+    labs(
+        title = "UK National Grid frequency over 1 hour",
+        subtitle = "The frequency is not stationary"
+    )
+```
+
+    ## Scale for 'x' is already present. Adding another scale for 'x', which
+    ## will replace the existing scale.
+
+![](README_files/figure-markdown_github/unnamed-chunk-1-1.png)
+
+An important class of modelling for time series data is known as ARIMA (Auto-regressive Integrated Moving Average) (Hyndman and Athanasopoulos 2014, sec. 8.1). In order to use this model, we need to understand the concept of "stationary" data. Formally, if *y*<sub>*t*</sub> is a stationary time series, then for all *s*, the distribution of (*y*<sub>*t*</sub>,…,*y*<sub>*t* + *s*</sub>) does not depend on *t*. A less formal description of stationary data is data which looks the same wherever you observe it. There should be no trending or seasonality; the data should look like white noise.
+
+When the frequency data is observed in a one hour time window, trending behavior is observed. The slowly decaying ACF (Auto-correlation Function) provides further evidence. Note that the ACF plot if for the *whole* data set.
+
+``` r
+ggAcf(df_tidy$freq) +
+    labs(
+        title = "ACF for frequency time series",
+        subtitle = "The plot suggests a non-stationary time-series"
+    )
+```
+
+![](README_files/figure-markdown_github/unnamed-chunk-2-1.png)
+
+### Differences
+
+A common approach to making data stationary is to apply differencing. This means to model differences in data rather than the original data. For example, consider the plots of differences in the frequency time-series.
+
+``` r
+# note that to use time series tools, it seems better to work with
+# data as time series. Below, we run the diff on a time series, convert back
+# to a data frame and joing it
+ts_tidy <- xts::xts(df_tidy$freq, df_tidy$date_time)
+
+df_tidy <- df_tidy %>% left_join(
+    diff(ts_tidy) %>% 
+        broom::tidy() %>% 
+        select(date_time = index, diff_freq = value)
+)
+```
+
+    ## Joining, by = "date_time"
+
+``` r
+ggplot(remove_missing(df_tidy), aes(date_time, diff_freq)) +
+    geom_line(colour = 'red', size = 0.2) +
+    geom_point(color = 'red', size = 0.7) +
+    coord_cartesian(xlim = my_xlims, ylim = 0.05 * c(-1, 1)) + 
+    scale_x_datetime(
+        breaks = my_breaks,
+        date_labels = "%H:%M"
+    ) +
+    labs(
+        title = "Differenced frequency over 1 hour",
+        subtitle = "The differenced frequency is stationary"
+    ) +
+    geom_smooth(method = "lm", linetype = "dashed", colour = "black") + 
+    theme(axis.text.x = element_text(angle = 60, vjust = 0.5))
+```
+
+    ## Warning: Removed 1 rows containing missing values.
+
+![](README_files/figure-markdown_github/unnamed-chunk-3-1.png)
+
+``` r
+ggAcf(df_tidy$diff_freq) +
+    labs(
+        title = "ACF for frequency time series",
+        subtitle = "The plot suggests a stationary time-series"
+    )
+```
+
+![](README_files/figure-markdown_github/unnamed-chunk-3-2.png)
 
 References
 ==========
