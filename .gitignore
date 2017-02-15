@@ -4,4 +4,4 @@
 .Ruserdata
 *.rds
 *_cache/
-*.nb.html
+*.html

@@ -1,0 +1,145 @@
+---
+title: "Time Series Study"
+output: 
+    flexdashboard::flex_dashboard:
+        orientation: columns
+        vertical_layout: fill
+runtime:
+    shiny
+---
+
+```{r setup, include = FALSE}
+# libraries -------------------------------------------------------------
+library(flexdashboard)
+library(xts)
+library(broom)
+library(tidyverse)
+library(lubridate)
+library(ggfortify)
+library(forecast)
+library(zoo)
+
+# sample times ----------------------------------------------------------
+start_date <- ymd(20050101)
+end_date <- ymd(20141201)
+date <- seq(from = start_date, to = end_date, by = "month")
+
+# function to convert time series to data frame -------------------------
+ts_to_df <- function(ts, index) {
+    vals <- ts %>% 
+        tidy() %>%
+        select_(setNames(1, "value")) %>% 
+        mutate(value = as.numeric(value))
+    cbind(index, vals) 
+}
+```
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+**Time series decompositon**
+
+A demonstration of the components of a time-series.
+
+```{r}
+checkboxGroupInput("comps", label = "Select components:", 
+                   choices = list("Level", "Trend", "Seasonal", "Error"),
+                   selected = list("Level", "Trend", "Seasonal", "Error"))
+radioButtons("type", "Model type:", 
+             choices = c("Additive", "Multiplicative"), selected = "Additive")
+p("Line fits:")
+checkboxInput("mov_ave_toggle", label = "Moving average",value = FALSE)
+conditionalPanel(
+    condition = "input.mov_ave_toggle == true",
+    sliderInput("mov_ave_order", label = "of order:", min = 1, max = 10, 
+                value = 3, step = 1)
+)
+
+```
+
+```{r raw_ts}
+raw_ts <- reactive({
+    
+    # for reprocibility -------------------------------------------------------- 
+    set.seed(20170214) 
+    
+    # data components ----------------------------------------------------------
+    N <- length(date)
+    level <- ("Level" %in% input$comps)
+    trend <- ("Trend" %in% input$comps) * 
+        (row_number(date) - 1) / 12
+    seasonal <- ("Seasonal" %in% input$comps) * 
+        sin(2 * pi * row_number(date) / 12) 
+    error <- ("Error" %in% input$comps) * 
+        rnorm(N, sd = 0.5)
+    
+    # total --------------------------------------------------------------------
+    vals <- if (input$type == "Additive") {
+        level + trend + seasonal + error
+    } else {
+        # note:                      y_t = S x T x E 
+        # is equivalent to:     log(y_t) = log(S) + log(T) + log(E)
+        # and {S, T, E} >= 0
+        # 
+        # if S = T  = E, = 1, the level is 1 and y_t = 1
+        # if {S, T, E} < 1, the component is decaying 
+        # if {S, T, E} > 1, the component is increasing
+        
+        (level - 1) +     # set level to zero no S, T, E
+        exp(
+            log(trend + 1) + 
+            log(0.3 * seasonal + 1) + 
+            log(0.3 * error + 1))
+    }
+    
+    ts(vals, start = year(start_date), frequency = 12)
+}) 
+```
+
+```{r ma_ts}
+ma_ts <- reactive({
+   ma(raw_ts(), order = input$mov_ave_order)
+})
+```
+
+```{r stl_ts}
+stl_ts <- reactive({
+    stl(raw_ts(), "periodic")
+})
+```
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Main Data
+
+```{r plot_main}
+
+renderPlot({ 
+    # convert raw ts to data frame ------------------------------------
+    raw_df <- ts_to_df(raw_ts(), index = date)
+    
+    # plot raw ts ----------------------------------------------------- 
+    g_main <- ggplot(raw_df, aes(date, value)) +
+        geom_line() +
+        coord_cartesian(ylim = c(-2.5, 15))
+     
+    if (input$mov_ave_toggle == TRUE) {
+        ma_df <- ts_to_df(ma_ts(), index = date)
+        g_main <- g_main + 
+            geom_line(data = ma_df, aes(date, value), na.rm = TRUE, 
+                      col = 'red', size = 0.4)
+    }
+    
+    g_main
+})
+```
+
+### Decomposed Data
+
+```{r plot_stl}
+renderPlot({ 
+    autoplot(stl_ts())
+})
+```
+
