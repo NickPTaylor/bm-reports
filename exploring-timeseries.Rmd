@@ -1,7 +1,7 @@
 ---
-title: "Understanding Timeseries in R"
+title: "Understanding Time Series in R"
 output:
-  html_document: default
+  github_document: default
   html_notebook: default
 ---
 
@@ -26,13 +26,13 @@ The objectives are:
 
 * To use the modelling tools in the `forecast` package.
 
-* To understand various approaches available within R for working with time series e.g. base, `zoo`, `xts`.
+* To understand various packages available within R for working with time series e.g. base, `zoo`, `xts`.
 
 * To understand how the above can be integrated into an analysis which uses the `tidyverse` family of packages.
 
 ## Simulate Data
 
-Imagine that we intend to explore a time series collected each month over 10 years starting from 2005.  It will be assumed that the time series data has a trend, a seasonal component and an error.
+Imagine that we intend to explore a time series collected each month over 10 years starting from 2005.  It will be assumed that the time series data has a trend, a seasonal component and an error.  The time series can be simulated as follows:
 
 ```{r}
 # for reproducibility ------------------------------------------------------
@@ -58,21 +58,17 @@ g_ts <- ggplot(ts_df, aes(date, value)) +
     geom_line()
 ```
 
-## Timeseries
-
-The code above resulted in the construction of an object of `dataframe` class i.e.
+In the above code, we constructed an object of `dataframe` class i.e.
 
 ```{r}
 class(ts_df)
 ```
 
-The problem is that modelling tools that are applicable to time-series often require objects which are *timeseries* classes.
+This is desirable since the powerful `tidyverse` can now be put to use on it.  Unfortunately though, specialist modelling tools that are applicable to time series analysis often require objects which are `ts` or `ts` derivative classes.  Specifically, we are interested in using the `forecast` package and it is the case that objects should be `ts` classes to work with the `forecast` package.
 
 ## Base R
 
-Consider the base R function `stats::stl`.  According to the documentation, this is a function for "decomposing a time series into seasonal, trend and irregular components".  This can be demonstrated on the simulated data.
-
-The documentation for the `stats::stl` function states that it operates on and object which is:
+It is useful to understand how a `ts` class is constructed.  Consider the base R function `stats::stl`.  According to the documentation, this is a function for "decomposing a time series into seasonal, trend and irregular components".  Hence, it is a useful tool to apply to data similar to the s documentation for the `stats::stl` function states that it operates on and object which is:
 
 * A univariate time series
 
@@ -86,7 +82,7 @@ It must be noted that the `stl` function cannot *guess* the period of seasonalit
 ts(value[1:10])
 ```
 
-According to the documentation, a `ts` object is restricted to be "sampled at equidistant point in time".  By default, the frequency is assumed to be 1; the  frequency is defined as the number of observations per unit time.  Note that when we use frequencies of 4 and 12, they are special cases; the series are assumed to be quarterly and yearly respectively: 
+According to the documentation, a `ts` object is restricted to be "sampled at equidistant points in time".  By default, the frequency is assumed to be 1; the  frequency is defined as the number of observations per unit time.  Note that when frequencies of 4 and 12 are used, they are special cases and the series are assumed to be quarterly and yearly respectively: 
 
 ```{r}
 ts(value[1:12], frequency = 4)
@@ -106,10 +102,8 @@ raw_ts <- ts(value, start = 2015, frequency = 12)
 raw_ts
 ```
 
-Frankly, I find `ts` objects not very intuitive and they do no behave consistently i.e. the special cases.  It is typical of base R: when used at the console, they provide 'convenience' feature but when used grammatically, the inconsistencies can cause a programmer grief.  
-
-In the current case, the simulation can be constructed as a base `ts` object as follows:
-
+Frankly, `ts` objects not very intuitive and they do no behave consistently i.e. the special cases.  It is typical of base R: when used at the console, they provide 'convenience' features but when used programmatically, the inconsistencies can cause grief. In the current case, the simulation can be constructed as a base `ts` object as follows: 
+ 
 ```{r}
 (ts_base <- ts(value, start = year(start_date), freq = 12))
 ```
@@ -121,7 +115,7 @@ fit <- stl(ts_base, s.window = "periodic")
 autoplot(fit)
 ```
 
-It is important to emphasise that the programmer must explicitly fixes the period of the season (in this case, annually) through the `frequency` argument.  Hence, this is different (and clearly wrong) even though the "core data" is the same: 
+It is important to emphasise that the programmer must explicitly fix the period of the season (in this case, annually) through the `frequency` argument when constructing the `ts`.  For example, if the above decomposition is repeated but with `frequency` set to 4 (for quarterly samples), the result is different (and clearly wrong) even though the "core data" is the same: 
 
 ```{r}
 fit <- stl(ts(value, start = 2005, frequency = 4), s.window = "periodic")
@@ -147,10 +141,6 @@ ts_to_df <- function(ts, index) {
     cbind(index, vals) 
 }
 
-```
-
-
-```{r}
 ma_df <- ts_to_df(mod_ma, date)
 ```
 
