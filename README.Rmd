@@ -5,7 +5,7 @@ output:
   github_document: default
   html_notebook: 
       code_folding="hide"
-bibliography: my_bib.bib
+bibliography: my-bib.bib
 ---
 
 ```{r setup, include = FALSE}
