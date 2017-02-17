@@ -150,4 +150,3 @@ This can be plotted as with `ggplot`:
 g_ts + geom_line(data = ma_df, aes(date, value), na.rm = TRUE, 
                  col = 'blue', size = 0.3)
 ```
-

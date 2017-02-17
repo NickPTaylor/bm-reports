@@ -1,0 +1,117 @@
+---
+title: "Classical Time Series Decomposition"
+output:
+  html_notebook: default
+  github_document: default
+bibliography: my-bib.bib
+---
+
+```{r setup, include = FALSE}
+library(tidyverse)
+library(lubridate)
+library(forecast)
+knitr::opts_chunk$set(
+  comment = "#>",
+  collapse = TRUE,
+  fig.width = 6,
+  fig.asp = 0.618,
+  out.width = "70%",
+  fig.align = "center"
+)
+```
+## Objective
+
+To manaully perform procedure as described on [@hyndman_2014mm, sec. 6.3] for an additive time series.
+
+## Simulate Data
+
+The code below simualates an time series with additive trend and seasonal compoents.
+
+```{r}
+# for reproducibility ------------------------------------------------------
+set.seed(20170214) 
+
+# data components ----------------------------------------------------------
+trend <- (row_number(1:120) - 1) / 12
+seasonal <- sin(2 * pi * row_number(1:120) / 12) 
+error <- rnorm(120, sd = 0.5)
+value <- trend + seasonal + error
+
+# timeseries as data frame ------------------------------------------------
+sim_ts <- ts(value, start = 2010, frequency = 12)
+
+# plot the time series -----------------------------------------------------
+sim_ts %>% autoplot()
+```
+
+## Decomposition Procedure
+
+### Using `stats::decompose`
+
+An R function exists to perform the procedure described below.  This can be used to check the analysis.
+
+```{r}
+sim_decompose <- decompose(sim_ts) 
+sim_decompose %>% autoplot()
+```
+
+### Step 1 
+
+> If $m$ is an even number, compute the trend-cycle component using a $2 \times m \textrm{-MA}$ to obtain $\hat{T}_t$. If $m$ is an odd number, compute the trend-cycle component using an $m\textrm{-MA}$ to obtain $\hat{T}_t$.
+
+This MA has the effect of averaging 13 month results *centered* upon the current time, $y_t$.  Each of the 13 months are weighted at $1/12$ except the first and last month which is weighted by $1/24$.  The first and last month of the 13 mont window will of course be the same month separated by one year.  Hence, the effect of this MA window is to compute a symmetrical 'year' average at each $y_t$.  This removes the seasonal effect.
+
+```{r}
+T_hat_t <- sim_ts %>%  ma(12)
+
+T_hat_t %>% autoplot()
+```
+
+We simulated a trend with a gradient of 1 and intercept of zero; by observation, the MA has had the desired effect.
+
+### Step 2
+
+> Calculate the detrended series: $y_t - \hat{T}_t$.
+
+```{r}
+detrended <- sim_ts - T_hat_t
+detrended %>% autoplot()
+```
+
+This contains the seasonal component and the error.
+
+### Step 3
+
+> To estimate the seasonal component for each month, simply average the detrended values for that month. For example, the seasonal index for March is the average of all the detrended March values in the data. These seasonal indexes are then adjusted to ensure that they add to zero. The seasonal component is obtained by stringing together all the seasonal indices for each year of data. This gives $\hat{S}_t$.
+
+```{r}
+seasonal_data <- data_frame(
+    month = factor(rep(month.abb, 10), levels = month.abb), 
+    value = coredata(detrended)
+) 
+
+level = mean(seasonal_data$value, na.rm = TRUE)
+
+seasonal_data <- seasonal_data %>% 
+    group_by(month) %>% 
+    summarise(seasonal = mean(value, na.rm = TRUE) - level) 
+
+S_hat_t <- ts(rep(seasonal_data$seasonal, 10), 2010, frequency = 12)
+
+S_hat_t %>% autoplot()
+```
+
+The seasonal component was simualated with a sin curve of period 1 year so this seems reasonable.
+
+### Step 4
+
+> The remainder component is calculated by subtracting the estimated seasonal and trend-cycle components: $\hat{E}_t = y_t -\hat{T}_t - \hat{S}_t$.
+
+```{r}
+E_hat_t = sim_ts - T_hat_t - (S_hat_t + level)
+E_hat_t %>% autoplot()
+```
+
+This is the white noise compoent.  The mean of the noise is calculated as `r round(mean(E_hat_t, na.rm = TRUE), 6)`.
+
+## References

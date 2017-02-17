@@ -1,0 +1,110 @@
+---
+title: "Classical Time Series Decomposition"
+output:
+  html_notebook: default
+  github_document: default
+bibliography: my-bib.bib
+---
+
+```{r setup, include = FALSE}
+library(tidyverse)
+library(lubridate)
+library(forecast)
+knitr::opts_chunk$set(
+  comment = "#>",
+  collapse = TRUE,
+  fig.width = 6,
+  fig.asp = 0.618,
+  out.width = "70%",
+  fig.align = "center"
+)
+```
+
+## Objective
+
+Demonstration of exponential smoothing
+
+## Principle
+
+Forecasts are based on a weighted average of past results where the weights decrease exponetially as observervations are further in the past:
+
+$$
+ \hat{y}_{T + 1|T}=\alpha y_T + \alpha (1 - \alpha) y_{T-1} + 
+                                \alpha (1 - \alpha)^2 y_{T-2} \ldots
+$$
+
+For small $\alpha$, $\lim_{\alpha \to 0} (1 - \alpha) = 1$ so the weights tend to $\alpha$ for all hisotrical observations.  For many samples, this is equivalent to the unweighted mean since $\alpha$ will sum to one.  For $\alpha = 1$, $\hat{y}_{T+1|T} = y_T$.  This is a so-called 'naive' forecast.  For intermediate values of alpha, the forecast is somewhere between a simple average of all data and a naive prediction.
+
+The plot of weighting against time lag for various $\alpha$ depicts this:
+
+```{r}
+grid <- data_frame(
+   alpha = c(0.05, 0.3, 0.7, 0.95),
+   t = rep(list(0:20))
+)
+
+grid <- grid %>% 
+    mutate(
+        weights = map2(.x = t, .y = alpha, ~.y * (1 - .y)^.x),
+        alpha = as.factor(alpha)
+    ) %>% 
+    unnest() 
+
+ggplot(grid, aes(x = as.factor(t + 1), y = weights, 
+                 group = alpha, col = alpha)) +
+    geom_line() +
+    geom_point(alpha = 0.3) +
+    labs(
+        title = "Exponetial Smoothing Weights",
+        y = "Weights",
+        x = "Time lag",
+        colour = expression(alpha)
+    )
+```
+
+## Simulate
+
+```{r}
+# for reproducibility ------------------------------------------------------
+set.seed(20170214) 
+
+# data components ----------------------------------------------------------
+trend <- (row_number(1:120) - 1) / 12
+seasonal <- sin(2 * pi * row_number(1:120) / 12) 
+error <- rnorm(120, sd = 0.5)
+value <- trend + seasonal + error
+
+# timeseries as data frame ------------------------------------------------
+sim_ts <- ts(value, start = 2010, frequency = 12)
+
+# plot the time series -----------------------------------------------------
+sim_ts %>% autoplot()
+```
+
+## Exponetial Smoothing
+
+```{r}
+ses_ts <- ses(sim_ts, alpha = 0.5, initial = 'simple')
+
+date <- ses_ts$x %>% 
+    as.xts() %>% 
+    index() %>% 
+    as.POSIXct(tz = "Europe/London")
+    
+#ses_df <- data_frame(
+#    date,
+#    raw = value,
+#    fitted = coredata(ses_ts$fitted)
+#) %>% gather(var, value, -date)
+
+
+autoplot(ses_ts, se = FALSE) +
+    geom_line(y = ses_ts$fitted, colour = 'red')
+    
+
+```
+
+```{r}
+
+```
+
