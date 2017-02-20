@@ -1,24 +1,10 @@
----
-title: "Rolling System Demand"
-output:
-  github_document: default
-  html_notebook: default
-bibliography: my-bib.bib
----
+Rolling System Demand
+================
 
-```{r setup, include = FALSE}
-library(urltools)
-library(getPass)
-library(tidyverse)
-library(xml2)
-library(lubridate)
-library(forecast)
-library(scales)
-```
+API Request
+-----------
 
-## API Request
-
-```{r}
+``` r
 # get API key from user  -------------------------------------------------------
 api_key <- getPass("Enter API key")
 stopifnot(!is.null(api_key))
@@ -43,15 +29,21 @@ query_url <- service_url %>%
 
 # connect to API and request data ---------------------------------------------
 print(paste0("[", Sys.time(), "] Connected to BM Reports API ..."))
+```
+
+    ## [1] "[2017-02-20 11:38:32] Connected to BM Reports API ..."
+
+``` r
 xmlfile <- read_xml(query_url)
 
 # tidy up sensitive information -----------------------------------------------
 rm(api_key,  query_url)
 ```
 
-## Tidy Data
+Tidy Data
+---------
 
-```{r}
+``` r
 # extract raw data from XML document and save ---------------------------------
 data_xpaths <- list(
     date = "//settDate", 
@@ -67,9 +59,10 @@ df_raw <- pmap(list(xpath = data_xpaths), xml_find_all, x = xmlfile) %>%
     select(date_time, generation, -c(date, time))
 ```
 
-## Plot Data
+Plot Data
+---------
 
-```{r}
+``` r
 my_breaks <- seq(from = ymd_hms(start_datetime, tz = 'Europe/London'), 
                  to = ymd_hms(end_datetime, tz = 'Europe/London'),
                  by = '6 hours')
@@ -85,21 +78,27 @@ ggplot(df_raw, aes(x = date_time, y = generation)) +
     ) +
     scale_x_datetime(date_breaks = "1 day", minor_breaks = my_breaks, 
                      labels = date_format("%a"))
-
 ```
 
-## STL Decompostion
+![](rolling-system-demand_files/figure-markdown_github/unnamed-chunk-3-1.png)
 
-```{r}
+STL Decompostion
+----------------
+
+``` r
 ts_raw <- ts(df_raw$generation, frequency = 288)
 stl_raw <- stl(ts_raw, s.window = 50)
 autoplot(stl_raw)
 ```
 
-## Forecast
+![](rolling-system-demand_files/figure-markdown_github/unnamed-chunk-4-1.png)
 
-```{r}
+Forecast
+--------
+
+``` r
 fcast <- forecast(ts_raw, method = 'ets')
 autoplot(fcast)
 ```
 
+![](rolling-system-demand_files/figure-markdown_github/unnamed-chunk-5-1.png)
