@@ -10,6 +10,8 @@ bibliography: my-bib.bib
 library(tidyverse)
 library(lubridate)
 library(forecast)
+library(xts)
+
 knitr::opts_chunk$set(
   comment = "#>",
   collapse = TRUE,
@@ -88,23 +90,13 @@ ses_ts <- ses(sim_ts, alpha = 0.5, initial = 'simple')
 
 date <- ses_ts$x %>% 
     as.xts() %>% 
-    index() %>% 
-    as.POSIXct(tz = "Europe/London")
+    index()
     
-#ses_df <- data_frame(
-#    date,
-#    raw = value,
-#    fitted = coredata(ses_ts$fitted)
-#) %>% gather(var, value, -date)
+ses_fitted <- data_frame(
+    date,
+    fitted = coredata(ses_ts$fitted)
+) %>% gather(var, value, -date)
 
-
-autoplot(ses_ts, se = FALSE) +
-    geom_line(y = ses_ts$fitted, colour = 'red')
-    
-
+autoplot(object = ses_ts) +
+  geom_line(data = ses_fitted, aes(x = date, y = value), colour = 'red')
 ```
-
-```{r}
-
-```
-

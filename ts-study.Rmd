@@ -19,6 +19,7 @@ library(ggfortify)
 library(forecast)
 library(zoo)
 
+
 # sample times ----------------------------------------------------------
 start_date <- ymd(20050101)
 end_date <- ymd(20141201)
@@ -34,6 +35,9 @@ ts_to_df <- function(ts, index) {
 }
 ```
 
+Docomposition
+=========================================================================
+
 Column {.sidebar}
 -----------------------------------------------------------------------
 
@@ -47,13 +51,36 @@ checkboxGroupInput("comps", label = "Select components:",
                    selected = list("Level", "Trend", "Seasonal", "Error"))
 radioButtons("type", "Model type:", 
              choices = c("Additive", "Multiplicative"), selected = "Additive")
-p("Line fits:")
+
+p("Fits:")
 checkboxInput("mov_ave_toggle", label = "Moving average",value = FALSE)
 conditionalPanel(
     condition = "input.mov_ave_toggle == true",
-    sliderInput("mov_ave_order", label = "of order:", min = 1, max = 10, 
-                value = 3, step = 1)
+    radioButtons("mov_ave_2x12", label = "Order of MA:",
+                 choices = c("Use 2x12-MA", "Choose Order")),
+        conditionalPanel(
+            condition = "input.mov_ave_2x12 == 'Choose Order'",
+            sliderInput("mov_ave_order", label = "of order:", 
+                       min = 1, max = 21, value = 11, step = 2)
+        )
 )
+sliderInput("stl_t_window", label = "Trend window size:", 
+            min = 7, max = 27, value = 7, step = 2)
+radioButtons("stl_toggle", label = "STL decomoposition:",
+             choices = c("Periodic", "Windowed"), selected = "Periodic")
+conditionalPanel(
+    condition = "input.stl_toggle == 'Windowed'",
+    sliderInput("stl_s_window", label = "Season window size:", 
+                min = 7, max = 27, value = 7, step = 2)
+)
+radioButtons("fcast_method", label = "Forecast method:",
+             choices = list("ETS" = "ets",
+                            "Naive" = "naive", 
+                            "Random Walk with Drift" =  "rwdrift"
+                            ), 
+             selected = "ETS")
+
+
 
 ```
 
@@ -64,28 +91,28 @@ raw_ts <- reactive({
     set.seed(20170214) 
     
     # data components ----------------------------------------------------------
-    N <- length(date)
+    n <- length(date)
     level <- ("Level" %in% input$comps)
     trend <- ("Trend" %in% input$comps) * 
         (row_number(date) - 1) / 12
     seasonal <- ("Seasonal" %in% input$comps) * 
         sin(2 * pi * row_number(date) / 12) 
     error <- ("Error" %in% input$comps) * 
-        rnorm(N, sd = 0.5)
+        rnorm(n, sd = 0.5)
     
     # total --------------------------------------------------------------------
     vals <- if (input$type == "Additive") {
         level + trend + seasonal + error
     } else {
-        # note:                      y_t = S x T x E 
-        # is equivalent to:     log(y_t) = log(S) + log(T) + log(E)
-        # and {S, T, E} >= 0
+        # note:                      y_t = s x t x e 
+        # is equivalent to:     log(y_t) = log(s) + log(t) + log(e)
+        # and {s, t, e} >= 0
         # 
-        # if S = T  = E, = 1, the level is 1 and y_t = 1
-        # if {S, T, E} < 1, the component is decaying 
-        # if {S, T, E} > 1, the component is increasing
+        # if s = t  = e, = 1, the level is 1 and y_t = 1
+        # if {s, t, e} < 1, the component is decaying 
+        # if {s, t, e} > 1, the component is increasing
         
-        (level - 1) +     # set level to zero no S, T, E
+        (level - 1) +     # set level to zero no s, t, e
         exp(
             log(trend + 1) + 
             log(0.3 * seasonal + 1) + 
@@ -95,43 +122,69 @@ raw_ts <- reactive({
     ts(vals, start = year(start_date), frequency = 12)
 }) 
 ```
-
 ```{r ma_ts}
 ma_ts <- reactive({
-   ma(raw_ts(), order = input$mov_ave_order)
+    if (input$mov_ave_2x12 == "Use 2x12-MA") {
+        return(ma(ma(raw_ts(), 2, FALSE), 12, FALSE))
+    } else {
+        return(ma(raw_ts(), order = input$mov_ave_order)) 
+    }
 })
 ```
 
 ```{r stl_ts}
 stl_ts <- reactive({
-    stl(raw_ts(), "periodic")
+    s <- ifelse(input$stl_toggle == "Periodic", "periodic", input$stl_s_window)
+    if (input$type == "Additive") {
+        stl(raw_ts(), s.window = s, t.window = input$stl_t_window)
+    } else {
+        my_stl <- stl(log(raw_ts()), s.window = s, 
+                      t.window = input$stl_t_window)
+        my_stl$time.series <- exp(my_stl$time.series)
+        my_stl
+    }
 })
 ```
 
-Column {.tabset}
+column {.tabset}
 -----------------------------------------------------------------------
 
 ### Main Data
 
 ```{r plot_main}
 
-renderPlot({ 
+g_main <- reactive({
     # convert raw ts to data frame ------------------------------------
     raw_df <- ts_to_df(raw_ts(), index = date)
     
     # plot raw ts ----------------------------------------------------- 
-    g_main <- ggplot(raw_df, aes(date, value)) +
-        geom_line() +
-        coord_cartesian(ylim = c(-2.5, 15))
-     
+    ggplot(raw_df, aes(date, value)) +
+        geom_line(aes(colour = 'raw')) +
+        coord_cartesian(ylim = c(-2.5, 15)) +
+        scale_colour_manual("Key",
+                            values = c('raw' = 'black', 'ma' = 'blue'), 
+                            labels = c('Raw','Moving Average')) +
+        theme(legend.position = c(0.05, 0.95),
+              legend.justification = c(0, 1))
+})
+
+renderPlot({
+    # could do something more clever with this!!
+    g_labels <- 
+        labs(
+            title = "Simulated time series plot with trend and seasonality",
+            y = "Value",
+            x = "Time"
+        )
+    
     if (input$mov_ave_toggle == TRUE) {
         ma_df <- ts_to_df(ma_ts(), index = date)
-        g_main <- g_main + 
-            geom_line(data = ma_df, aes(date, value), na.rm = TRUE, 
-                      col = 'red', size = 0.4)
+        g_ma <- geom_line(data = ma_df, aes(date, value, colour = 'ma'), 
+                          na.rm = TRUE, size = 0.4)
+        return(g_main() + g_labels + g_ma)
+    } else {
+        return(g_main() + g_labels)
     }
-    
-    g_main
 })
 ```
 
@@ -140,6 +193,82 @@ renderPlot({
 ```{r plot_stl}
 renderPlot({ 
     autoplot(stl_ts())
+})
+```
+
+### Seasonally Adjusted
+```{r}
+renderPlot({
+    seasadj_ts <- stl_ts() %>% 
+        seasadj()
+    
+    seasadj_df <- seasadj_ts %>% 
+        ts_to_df(index = date)
+    
+    g_main() + geom_line(colour = 'grey', size = .5) +
+        geom_line(data = seasadj_df, aes(date, value, colour = 'seasadj')) +
+        scale_colour_manual(name = 'Key', 
+                            values = c('raw' = 'grey', 'seasadj' = 'red'), 
+                            labels = c('Raw','Seasonally Adjusted')) +
+        theme(legend.position = c(0.05, 0.95),
+              legend.justification = c(0, 1)) + 
+        labs(
+            title = "Seasonally adjuted time series",
+            subtitle = paste("Seasonal compenent removed enabling focus",
+                             "on non-seasonal trends"),
+            y = "Value",
+            x = "Time"
+        )
+})
+```
+
+### Forecast
+
+```{r}
+renderPlot({
+    fcast <- forecast(stl_ts(), method = input$fcast_method)
+    autoplot(fcast)
+})
+```
+
+Exponetial Smoothing
+=========================================================================
+
+Column {.sidebar}
+-------------------------------------------------------------------------
+
+**Exponetial Smoothing**
+
+Demonstration of exponetial smoothing.
+
+```{r}
+sliderInput("ses_alpha", label = "Alpha:", 
+            value = 0.5, min = 0, max = 1, step = 0.01)
+```
+
+column
+-----------------------------------------------------------------------
+
+### Plot
+
+```{r}
+ses_ts <- reactive({
+    ses(raw_ts(), alpha = input$ses_alpha, initial = "simple", h = 36)
+})
+
+ses_fitted <- reactive({
+    data_frame(
+        date = ses_ts()$x %>% as.xts() %>% index(),
+        fitted = coredata(ses_ts()$fitted)
+    ) %>% gather(var, value, -date)
+})
+```
+
+```{r}
+renderPlot({
+     print(ses_fitted())
+     autoplot(ses_ts(), se = FALSE) +
+       geom_line(data = ses_fitted(), aes(x = date, y = value), colour = 'red')
 })
 ```
 
