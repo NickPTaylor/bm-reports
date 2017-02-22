@@ -1,47 +1,27 @@
----
-title: "Exponential Smoothing"
-output:
-  html_notebook: default
-  github_document: default
-bibliography: my-bib.bib
----
+Exponential Smoothing
+================
 
-```{r setup, include = FALSE}
-library(tidyverse)
-library(lubridate)
-library(forecast)
-library(xts)
-
-knitr::opts_chunk$set(
-  comment = "#>",
-  collapse = TRUE,
-  fig.width = 6,
-  fig.asp = 0.618,
-  out.width = "70%",
-  fig.align = "center"
-)
-```
-
-## Objective
+Objective
+---------
 
 Demonstrate of exponential smoothing.
 
-### Simple Exponetial Smoothing 
+### Simple Exponetial Smoothing
 
 #### Principle
 
 Forecasts are based on a weighted average of past results where the weights decrease exponentially as the observations are further in the past:
 
 $$
- \hat{y}_{T + 1|T}=\alpha y_T + \alpha (1 - \alpha) y_{T-1} + 
-                                \alpha (1 - \alpha)^2 y_{T-2} \ldots
+ \\hat{y}\_{T + 1|T}=\\alpha y\_T + \\alpha (1 - \\alpha) y\_{T-1} + 
+                                \\alpha (1 - \\alpha)^2 y\_{T-2} \\ldots
 $$
 
-For small $\alpha$, $\lim_{\alpha \to 0} (1 - \alpha) = 1$ so the weights tend to $\alpha$ for all historical observations.  For many samples, this is equivalent to the unweighted mean since $\alpha$ will sum to one.  For $\alpha = 1$, $\hat{y}_{T+1|T} = y_T$.  This is a so-called 'naive' forecast i.e. the forecast for the next result is simply the same as the current result.  For intermediate values of $\alpha$, the forecast is somewhere between a simple average of all data and a naive prediction.
+For small *α*, lim<sub>*α* → 0</sub>(1 − *α*)=1 so the weights tend to *α* for all historical observations. For many samples, this is equivalent to the unweighted mean since *α* will sum to one. For *α* = 1, $\\hat{y}\_{T+1|T} = y\_T$. This is a so-called 'naive' forecast i.e. the forecast for the next result is simply the same as the current result. For intermediate values of *α*, the forecast is somewhere between a simple average of all data and a naive prediction.
 
-The plot of weighting against time lag for various $\alpha$ depicts this:
+The plot of weighting against time lag for various *α* depicts this:
 
-```{r g_smooth_weights}
+``` r
 grid <- data_frame(
    alpha = c(0.05, 0.3, 0.7, 0.95),
    t = rep(list(0:20))
@@ -66,11 +46,13 @@ grid <- grid %>%
     ))
 ```
 
-#### Simulation 
+<img src="exponential-smoothing_files/figure-markdown_github/g_smooth_weights-1.png" width="70%" style="display: block; margin: auto;" />
 
-Simple exponential smoothing (SES) applies to time series with no trend or seasonality.  The r function `forecast::ses()` is used to estimate an SES model.   For example, consider the simulation below.
+#### Simulation
 
-```{r ses_sim}
+Simple exponential smoothing (SES) applies to time series with no trend or seasonality. The r function `forecast::ses()` is used to estimate an SES model. For example, consider the simulation below.
+
+``` r
 # for reproducibility ---------------------------------------------------------
 set.seed(20170214) 
 
@@ -99,12 +81,14 @@ fcast_fix <- ses(my_sim, alpha = 0.5, initial = 'simple')
 fcast_opt <- ses(my_sim, initial = 'simple')
 
 cat(sprintf("Alpha: %1.2f", fcast_opt$model$par['alpha']))
+#> Alpha: 0.58
 ```
-A time series is generated which adheres to an SES model with  $\alpha=0.5$.  As is required for SES modelling, trend or seasonality has not been included.  When `forecast::ses()` is invoked without setting alpha, an optimum is calculated by minimising SSE (sum of squared errors).  The value estimated is `r round(fcast_opt$model$par['alpha'], 2)`.  Of course, this the estimate is not *exactly* 0.5 since a random normal IDD error has been included in the simulation.  
 
-If the simulation is run many times, it is possible to gain an insight into the performance.  Here, a check is performed that the estimated $\alpha$ from 500 simulations is centered on the actual $\alpha$ of 0.5.
+A time series is generated which adheres to an SES model with *α* = 0.5. As is required for SES modelling, trend or seasonality has not been included. When `forecast::ses()` is invoked without setting alpha, an optimum is calculated by minimising SSE (sum of squared errors). The value estimated is 0.58. Of course, this the estimate is not *exactly* 0.5 since a random normal IDD error has been included in the simulation.
 
-```{r sim_df, cache=TRUE, warning=FALSE}
+If the simulation is run many times, it is possible to gain an insight into the performance. Here, a check is performed that the estimated *α* from 500 simulations is centered on the actual *α* of 0.5.
+
+``` r
 set.seed(1024)
 sim_df <- 
     data_frame(my_sim = replicate(500, list(ses_sim(0.5)))) %>% 
@@ -116,7 +100,7 @@ sim_df <-
 
 The results are plotted here:
 
-```{r g_sim_df, out.width="50%", fig.align="default", fig.show="hold"}
+``` r
 # remove alpha = 0 which are probably failed models ----------------------------
 (g_sim_df_box <- sim_df %>% filter(alpha > 0) %>% 
     ggplot(aes(y = alpha, x = "alpha")) +
@@ -143,11 +127,13 @@ The results are plotted here:
         ))
 ```
 
+<img src="exponential-smoothing_files/figure-markdown_github/g_sim_df-1.png" width="50%" /><img src="exponential-smoothing_files/figure-markdown_github/g_sim_df-2.png" width="50%" />
+
 #### Forecasting
 
-In R, a plot of the fit and forecast can be produced as follows.  Here, the actual and estimated $\alpha$ are included.
+In R, a plot of the fit and forecast can be produced as follows. Here, the actual and estimated *α* are included.
 
-```{r ses_fitted}
+``` r
 # convert fitted line to data frame for ggplot ----------------------------
 date <- fcast_fix$x %>% 
     as.xts() %>% 
@@ -163,4 +149,6 @@ autoplot(fcast_fix) +
     geom_line(data = ses_fitted, aes(x = date, y = value, colour = var))
 ```
 
-Forecasts in the SES model are 'flat' and include no trend or seasonality.  Hence, the forecast ahead is a flat line.  Confidence intervals are included and as expected, these increase with the time to the forecast horizon.
+<img src="exponential-smoothing_files/figure-markdown_github/ses_fitted-1.png" width="70%" style="display: block; margin: auto;" />
+
+Forecasts in the SES model are 'flat' and include no trend or seasonality. Hence, the forecast ahead is a flat line. Confidence intervals are included and as expected, these increase with the time to the forecast horizon.
