@@ -1,6 +1,6 @@
 ---
 title: "BM Report Analysis"
-date: "`r format(Sys.Date())`"
+date: 2017-03-02
 output:
   github_document: default
   html_notebook: 

@@ -1,6 +1,6 @@
 BM Report Analysis
 ================
-2017-02-15
+2017-03-02
 
 Introduction
 ============
@@ -246,9 +246,9 @@ ggAcf(df_tidy$diff_freq) +
 References
 ==========
 
-Ghanty, Zaahir. 2016. *BMRS Api and Data Push User Guide*. Elexon.
+Ghanty, Zaahir. 2016. *BMRS API and Data Push User Guide*. Elexon. <https://www.elexon.co.uk/wp-content/uploads/2016/10/Application-Programming-Interfaces-API-and-Data-Push-user-guide.pdf>.
 
-Hyndman, Rob J., and George Athanasopoulos. 2014. *Forecasting: Principles and Practice*. OTexts.
+Hyndman, Rob J., and George Athanasopoulos. 2014. *Forecasting: Principles and Practice*. OTexts. <https://www.otexts.org/fpp>.
 
 W3Schools. 2017. “XPath Tutorial.” <http://www.w3schools.com/xml/xpath_intro.asp>.
 
